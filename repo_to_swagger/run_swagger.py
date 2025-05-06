@@ -28,29 +28,23 @@ class RunSwagger:
         print(f"completed framework identification - {framework}")
         print("\n***************************************************")
         print("Started finding files related to API information")
-        try:
-            api_files = self.file_scanner.find_api_files(file_paths, framework)
-            print("Completed finding files related to API information")
-            all_endpoints = []
-            for filePath in api_files:
-                endpoints = self.endpoints_extractor.extract_endpoints_with_gpt(filePath, framework)
-                all_endpoints.extend(endpoints)
-            print("\n***************************************************")
-            print("Started creating faiss index for all files")
-            faiss_vector = self.faiss_index.create_faiss_index(file_paths, framework)
-            print("Completed creating faiss index for all files")
-            print("Fetching authentication related information")
-            authentication_information = self.faiss_index.get_authentication_related_information(faiss_vector)
-            print("Completed Fetching authentication related information")
-            endpoint_related_information = self.endpoints_extractor.get_endpoint_related_information(faiss_vector, all_endpoints)
-            swagger = self.swagger_generator.create_swagger_json(self.user_config['repo_name'],endpoint_related_information, authentication_information, framework, self.user_config['api_host'])
-        except Exception as ex:
-            print("Oops! looks like we encountered an issue. Please try after some time.")
-            exit()
-        try:
-            self.swagger_generator.save_swagger_json(swagger, self.user_config['output_filepath'])
-        except Exception as ex:
-            print("Swagger was not able to be uploaded to server. Please check your project api key and try again.")
+
+        api_files = self.file_scanner.find_api_files(file_paths, framework)
+        print("Completed finding files related to API information")
+        all_endpoints = []
+        for filePath in api_files:
+            endpoints = self.endpoints_extractor.extract_endpoints_with_gpt(filePath, framework)
+            all_endpoints.extend(endpoints)
+        print("\n***************************************************")
+        print("Started creating faiss index for all files")
+        faiss_vector = self.faiss_index.create_faiss_index(file_paths, framework)
+        print("Completed creating faiss index for all files")
+        print("Fetching authentication related information")
+        authentication_information = self.faiss_index.get_authentication_related_information(faiss_vector)
+        print("Completed Fetching authentication related information")
+        endpoint_related_information = self.endpoints_extractor.get_endpoint_related_information(faiss_vector, all_endpoints)
+        swagger = self.swagger_generator.create_swagger_json(self.user_config['repo_name'],endpoint_related_information, authentication_information, framework, self.user_config['api_host'])
+        self.swagger_generator.save_swagger_json(swagger, self.user_config['output_filepath'])
         print("Swagger Generated Successfully")
         self.upload_swagger_to_qodex()
         return
