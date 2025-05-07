@@ -14,7 +14,7 @@ class Configurations:
         # Assign values from the YAML file
         self.ignored_dirs = set(self.config.get("ignored_dirs", []))
         self.routing_patters_map = self.config.get("routing_patterns_map", {})
-        self.gpt_4o_model_name = self.config.get("gpt_4o_model_name", "gpt-4o")
+        self.gpt_4o_model_name = self.config.get("gpt_4o_model_name", "gpt-4.1-2025-04-14")
         self.user_config_file_dir = os.path.join(os.getcwd(), self.config.get("user_config_file_dir", ".qodexai"))
 
     def _load_config(self, config_path):
