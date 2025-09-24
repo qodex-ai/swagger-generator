@@ -1,4 +1,4 @@
-# Swagger Generator 🚀
+# Swagger Generator --- Quick Start
 
 Generate **OpenAPI (Swagger) specs** for your codebase in seconds.  
 Just provide a repo path and API key, and Swagger Generator will analyze your project and produce a Swagger JSON automatically.
