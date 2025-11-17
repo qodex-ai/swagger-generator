@@ -3,6 +3,42 @@
 VENV_DIR="qodexai-virtual-env"
 REPO_URL="https://github.com/qodex-ai/apimesh.git"
 REPO_NAME="apimesh"
+CURRENT_DIR="$(pwd)"
+DEFAULT_REPO_PATH="$CURRENT_DIR"
+PARENT_DIR="$(dirname "$CURRENT_DIR")"
+CLONE_DIR="$CURRENT_DIR/$REPO_NAME"
+VENV_PATH="$CURRENT_DIR/$VENV_DIR"
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-$0}"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE")" && pwd -P)"
+SCRIPT_PATH="$SCRIPT_DIR/$(basename "$SCRIPT_SOURCE")"
+
+cleanup() {
+    local exit_code=$?
+    trap - EXIT
+    if command -v deactivate >/dev/null 2>&1; then
+        deactivate >/dev/null 2>&1 || true
+    fi
+    if [[ -d "$CLONE_DIR" ]]; then
+        if [[ -n "$APIMESH_PARENT_DIR" && "$APIMESH_PARENT_DIR" == "$CLONE_DIR" ]]; then
+            echo "Skipping removal of '$CLONE_DIR' because it is configured as the output directory."
+        else
+            echo "Removing cloned repository at '$CLONE_DIR'"
+            rm -rf "$CLONE_DIR"
+        fi
+    fi
+    if [[ -d "$VENV_PATH" ]]; then
+        echo "Removing virtual environment at '$VENV_PATH'"
+        rm -rf "$VENV_PATH"
+    fi
+    exit "$exit_code"
+}
+trap cleanup EXIT
+
+if [[ ! -d "$DEFAULT_REPO_PATH/.git" && "$PARENT_DIR" != "$CURRENT_DIR" && -d "$PARENT_DIR/.git" ]]; then
+    DEFAULT_REPO_PATH="$PARENT_DIR"
+fi
+
+REPO_PATH="$DEFAULT_REPO_PATH"
 
 # Check if the virtual environment directory exists
 if [[ -d "$VENV_DIR" ]]; then
@@ -93,8 +129,35 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ -z "$REPO_PATH" ]]; then
+  REPO_PATH="$DEFAULT_REPO_PATH"
+fi
+
+if [[ ! -d "$REPO_PATH" ]]; then
+  echo "The repository path '$REPO_PATH' does not exist."
+  exit 1
+fi
+
+REPO_PATH="$(cd "$REPO_PATH" && pwd -P)"
+WORKSPACE_DIR="$REPO_PATH/apimesh"
+mkdir -p "$WORKSPACE_DIR"
+APIMESH_PARENT_DIR="$(cd "$WORKSPACE_DIR" && pwd -P)"
+export APIMESH_PARENT_DIR
+
+TARGET_RUN_SCRIPT="$(cd "$APIMESH_PARENT_DIR" && pwd -P)/run.sh"
+if [[ "$SCRIPT_PATH" != "$TARGET_RUN_SCRIPT" ]]; then
+  cp "$SCRIPT_PATH" "$TARGET_RUN_SCRIPT"
+  chmod +x "$TARGET_RUN_SCRIPT"
+  echo "Ensured workspace bootstrap script is up to date at '$TARGET_RUN_SCRIPT'."
+fi
+
+
 echo "Running the Python script..."
-source qodexai-virtual-env/bin/activate
-cd apimesh/
-python3 -m swagger_generation_cli $REPO_PATH $OPENAI_API_KEY $PROJECT_API_KEY $AI_CHAT_ID
-exit 1
+(
+  cd "$REPO_NAME"/ || exit 1
+  python3 -m swagger_generation_cli "$REPO_PATH" "$OPENAI_API_KEY" "$PROJECT_API_KEY" "$AI_CHAT_ID"
+)
+CLI_EXIT_CODE=$?
+
+echo "Swagger generation finished with status $CLI_EXIT_CODE."
+exit "$CLI_EXIT_CODE"
