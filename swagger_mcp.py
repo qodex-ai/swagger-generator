@@ -1,6 +1,7 @@
 from mcp.server.fastmcp import FastMCP
 from typing import Optional
-import os, subprocess, shutil, sys
+from pathlib import Path
+import os, subprocess, shutil, sys, json
 
 APP_NAME = "SwaggerGenerator MCP"
 DEFAULT_WORK_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -18,6 +19,37 @@ def _need(cmd: str):
 
 def _ensure_dir(p: str):
     os.makedirs(p, exist_ok=True)
+
+def _collect_artifacts(base_dir: str, repo_path: str) -> dict:
+    """
+    Gather the generated swagger.json path and a link to the local apimesh docs file.
+    """
+    artifacts = {}
+
+    # Get output filepath from environment variable
+    output_filepath = os.environ.get("APIMESH_OUTPUT_FILEPATH")
+    if output_filepath:
+        swagger_path = os.path.abspath(output_filepath)
+    else:
+        # Default to repo_path/apimesh/swagger.json
+        swagger_path = os.path.join(repo_path, "apimesh", "swagger.json")
+        swagger_path = os.path.abspath(swagger_path)
+    
+    artifacts["swagger_path"] = swagger_path
+    try:
+        artifacts["swagger_file_link"] = Path(swagger_path).resolve(strict=False).as_uri()
+    except ValueError:
+        pass
+
+    docs_path = Path(base_dir) / "apimesh-docs.html"
+    resolved_docs_path = docs_path.resolve(strict=False)
+    artifacts["apimesh_docs_path"] = str(resolved_docs_path)
+    try:
+        artifacts["apimesh_docs_link"] = resolved_docs_path.as_uri()
+    except ValueError:
+        pass
+
+    return artifacts
 
 @mcp.tool()
 def run_swagger_generation(
@@ -67,6 +99,7 @@ def run_swagger_generation(
     env.update({
         "OPENAI_API_KEY": openai_api_key,
         "SWAGGER_BOT_REPO_PATH": repo_path,
+        "APIMESH_USER_REPO_PATH": repo_path,
         "WORK_DIR": base_dir,
     })
 
@@ -90,12 +123,14 @@ def run_swagger_generation(
         timeout=timeout_seconds,
     )
 
-    return {
+    result = {
         "exit_code": proc.returncode,
         "work_dir": base_dir,
         "stdout": proc.stdout[-200_000:],
         "stderr": proc.stderr[-200_000:],
     }
+    result.update(_collect_artifacts(base_dir, repo_path))
+    return result
 
 if __name__ == "__main__":
     print("[mcp] server booted; waiting on stdio", file=sys.stderr)
