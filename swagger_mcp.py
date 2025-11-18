@@ -1,5 +1,6 @@
 from mcp.server.fastmcp import FastMCP
-from typing import Optional
+from mcp.types import TextContent, ResourceLink
+from typing import Optional, Tuple, Any
 from pathlib import Path
 import os, subprocess, shutil, sys, json
 
@@ -20,11 +21,13 @@ def _need(cmd: str):
 def _ensure_dir(p: str):
     os.makedirs(p, exist_ok=True)
 
-def _collect_artifacts(base_dir: str, repo_path: str) -> dict:
+def _collect_artifacts(base_dir: str, repo_path: str) -> Tuple[dict[str, str], list[ResourceLink]]:
     """
     Gather the generated swagger.json path and a link to the local apimesh docs file.
+    Returns a tuple of (artifacts dict, resource_links list).
     """
     artifacts = {}
+    resource_links = []
 
     config_path = Path(base_dir) / "apimesh" / "config.json"
     config_data = {}
@@ -41,33 +44,43 @@ def _collect_artifacts(base_dir: str, repo_path: str) -> dict:
             config_data = {}
 
     swagger_path = os.path.expanduser(swagger_path)
-    if swagger_path:
-        if not os.path.isabs(swagger_path):
-            repo_from_config = config_data.get("repo_path") or repo_path
-            swagger_path = os.path.join(repo_from_config, swagger_path)
-        swagger_path = os.path.abspath(swagger_path)
-        artifacts["swagger_path"] = swagger_path
+    swagger_file = Path(swagger_path)
+    if not swagger_file.is_absolute():
+        repo_from_config = config_data.get("repo_path") or repo_path
+        swagger_file = Path(repo_from_config) / swagger_file
+    swagger_file = swagger_file.resolve(strict=False)
+    artifacts["swagger_path"] = str(swagger_file)
+
+    if swagger_file.exists():
         try:
-            artifacts["swagger_file_link"] = Path(swagger_path).resolve(strict=False).as_uri()
+            swagger_uri = swagger_file.as_uri()
+            artifacts["swagger_file_link"] = swagger_uri
+            resource_links.append(
+                ResourceLink(type="resource_link", uri=swagger_uri, description="Swagger JSON output")
+            )
         except ValueError:
             pass
 
-    docs_path = Path(base_dir) / "apimesh-docs.html"
-    resolved_docs_path = docs_path.resolve(strict=False)
-    artifacts["apimesh_docs_path"] = str(resolved_docs_path)
-    try:
-        artifacts["apimesh_docs_link"] = resolved_docs_path.as_uri()
-    except ValueError:
-        pass
+    docs_file = swagger_file.with_name("apimesh-docs.html")
+    artifacts["apimesh_docs_path"] = str(docs_file)
+    if docs_file.exists():
+        try:
+            docs_uri = docs_file.as_uri()
+            artifacts["apimesh_docs_link"] = docs_uri
+            resource_links.append(
+                ResourceLink(type="resource_link", uri=docs_uri, description="Open apimesh-docs.html")
+            )
+        except ValueError:
+            pass
 
-    return artifacts
+    return artifacts, resource_links
 
 @mcp.tool()
 def run_swagger_generation(
     openai_api_key: str,
     repo_path: str,
     timeout_seconds: int = 900
-) -> dict:
+) -> Tuple[list, dict[str, Any]]:
     """
     This tool takes the path of the repository, openai_api_key and timeout to generate a openapi spec swagger json for that repo.
     """
@@ -133,14 +146,32 @@ def run_swagger_generation(
         timeout=timeout_seconds,
     )
 
+    artifacts, resource_links = _collect_artifacts(base_dir, repo_path)
+    summary_lines = [
+        f"Swagger generation completed with exit code {proc.returncode}.",
+        f"Working directory: {base_dir}",
+    ]
+    swagger_path = artifacts.get("swagger_path")
+    if swagger_path:
+        summary_lines.append(f"Swagger JSON: {swagger_path}")
+    docs_path = artifacts.get("apimesh_docs_path")
+    if docs_path:
+        summary_lines.append(f"HTML docs: {docs_path}")
+    summary_text = "\n".join(summary_lines)
+
     result = {
         "exit_code": proc.returncode,
         "work_dir": base_dir,
         "stdout": proc.stdout[-200_000:],
         "stderr": proc.stderr[-200_000:],
     }
-    result.update(_collect_artifacts(base_dir, repo_path))
-    return result
+    result.update(artifacts)
+
+    content_blocks = [TextContent(type="text", text=summary_text)]
+    if resource_links:
+        content_blocks.extend(resource_links)
+
+    return content_blocks, result
 
 if __name__ == "__main__":
     print("[mcp] server booted; waiting on stdio", file=sys.stderr)
